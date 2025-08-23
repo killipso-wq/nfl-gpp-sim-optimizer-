@@ -1,0 +1,92 @@
+name: Run optimizer
+
+on:
+  workflow_dispatch:
+    inputs:
+      players_url:
+        description: "HTTP(S) URL to Players.csv (required)"
+        required: true
+        type: string
+      sims_url:
+        description: "HTTP(S) URL to sims.csv (optional)"
+        required: false
+        type: string
+      def_url:
+        description: "HTTP(S) URL to DEF.csv (optional)"
+        required: false
+        type: string
+      corr_url:
+        description: "HTTP(S) URL to QBRBWRTE.csv (optional)"
+        required: false
+        type: string
+      preset:
+        description: "Lineup preset"
+        required: false
+        type: choice
+        default: large
+        options:
+          - se
+          - mid
+          - large
+      n:
+        description: "Number of lineups to build"
+        required: false
+        type: string
+        default: "150"
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install package
+        run: |
+          python -m pip install -U pip
+          pip install -e .
+
+      - name: Download inputs
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p data out
+          curl -L "${{ github.event.inputs.players_url }}" -o data/Players.csv
+          if [ -n "${{ github.event.inputs.sims_url }}" ]; then curl -L "${{ github.event.inputs.sims_url }}" -o data/sims.csv; fi
+          if [ -n "${{ github.event.inputs.def_url }}" ]; then curl -L "${{ github.event.inputs.def_url }}" -o data/DEF.csv; fi
+          if [ -n "${{ github.event.inputs.corr_url }}" ]; then curl -L "${{ github.event.inputs.corr_url }}" -o data/QBRBWRTE.csv; fi
+
+      - name: Blend projections
+        shell: bash
+        run: |
+          set -euo pipefail
+          SIMS_FLAG=""; [ -f data/sims.csv ] && SIMS_FLAG="--sims data/sims.csv"
+          DEF_FLAG="";  [ -f data/DEF.csv ]  && DEF_FLAG="--defcsv data/DEF.csv"
+          CORR_FLAG=""; [ -f data/QBRBWRTE.csv ] && CORR_FLAG="--corrcsv data/QBRBWRTE.csv"
+          python -m nfl_gpp_sim_optimizer.cli compare-apply \
+            --players data/Players.csv $SIMS_FLAG $DEF_FLAG $CORR_FLAG \
+            --outdir out
+
+      - name: Build lineups
+        shell: bash
+        run: |
+          set -euo pipefail
+          CORR_FLAG=""; [ -f data/QBRBWRTE.csv ] && CORR_FLAG="--corrcsv data/QBRBWRTE.csv"
+          PRESET="${{ github.event.inputs.preset }}"
+          N_INPUT="${{ github.event.inputs.n }}"
+          if [ -z "$N_INPUT" ]; then N=150; else N="$N_INPUT"; fi
+          python -m nfl_gpp_sim_optimizer.cli build-lineups \
+            --players out/players_adjusted.csv $CORR_FLAG \
+            --preset "$PRESET" --n "$N" --outdir out
+
+      - name: Upload results
+        uses: actions/upload-artifact@v4
+        with:
+          name: optimizer-results
+          path: |
+            out/*.csv
