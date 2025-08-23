@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "nfl_gpp_sim_optimizer"
+version = "0.1.0"
+description = "NFL GPP optimizer with sim blend projections, O/U+SPRD stacking, chalk/pivot logic"
+authors = [{name = "killipso-wq"}]
+requires-python = ">=3.10"
+dependencies = [
+  "pandas>=2.2",
+  "numpy>=1.26",
+  "pulp>=2.7",
+]
+
+[project.scripts]
+nfl-gpp = "nfl_gpp_sim_optimizer.cli:main"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["nfl_gpp_sim_optimizer*"]
