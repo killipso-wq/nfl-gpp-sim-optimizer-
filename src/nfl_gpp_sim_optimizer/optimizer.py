@@ -12,6 +12,7 @@ def zscore(series: pd.Series) -> pd.Series:
 def compute_game_scores(df: pd.DataFrame) -> pd.DataFrame:
     # Requires O/U and SPRD, Team and Opp to group
     if not set(["Team","Opp","O/U","SPRD"]).issubset(df.columns):
+        df = df.copy()
         df["game_score"] = 0.0
         return df
     df = df.copy()
@@ -21,6 +22,9 @@ def compute_game_scores(df: pd.DataFrame) -> pd.DataFrame:
     game_agg["total_z"] = zscore(game_agg["O/U"])
     game_agg["spread_z"] = zscore(game_agg["SPRD"].abs())
     game_agg["game_score"] = game_agg["total_z"] - 0.7*game_agg["spread_z"]
+    # Drop existing game_score if present before joining
+    if "game_score" in df.columns:
+        df = df.drop(columns=["game_score"])
     df = df.join(game_agg["game_score"], on="_gid")
     return df
 
@@ -53,6 +57,8 @@ def generate_lineups(df_players: pd.DataFrame, corr: pd.DataFrame | None, preset
     salary = df["SAL"].astype(float)
     proj_base = df["Fantasy points"].astype(float)
     value = df["value"] if "value" in df.columns else proj_base / (salary/1000.0)
+    # Ensure value is in the dataframe
+    df["value"] = value
     stdev = df.get("stdev_sim", pd.Series(0.0, index=df.index)).fillna(0.0).astype(float)
     gs = df.get("game_score", pd.Series(0.0, index=df.index)).astype(float)
 
