@@ -8,8 +8,14 @@ __pycache__/
 .env
 .envrc
 
+# Editors/IDE
+.vscode/
+.idea/
+
 # OS
 .DS_Store
 
-# Output
+# Data and outputs (keep private/off-repo)
+*.csv
 out/
+data/
