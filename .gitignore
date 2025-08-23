@@ -19,3 +19,7 @@ __pycache__/
 *.csv
 out/
 data/
+
+# Streamlit (include config.toml but ignore other files)
+.streamlit/
+!.streamlit/config.toml
