@@ -175,7 +175,7 @@ class GameSimulator:
             # Single RB gets most of the volume
             rb_name = rbs.iloc[0]['player_name']
             rush_plays = team_plays * (1 - pass_rate)
-            target_share = rbs.iloc[0].get('target_share', 0.05)
+            target_share = rbs.iloc[0].get('target_share', 0.05)  # Use get() method
             
             allocations[rb_name] = {
                 'rushes': (rush_plays * 0.8).astype(int),  # RB gets 80% of rush attempts
@@ -186,8 +186,8 @@ class GameSimulator:
             n_rbs = len(rbs)
             
             # Get historical shares as alpha parameters
-            carry_shares = rbs['carry_share'].fillna(1.0 / n_rbs).values
-            target_shares = rbs['target_share'].fillna(0.02).values
+            carry_shares = rbs.get('carry_share', pd.Series([1.0 / n_rbs] * n_rbs)).fillna(1.0 / n_rbs).values
+            target_shares = rbs.get('target_share', pd.Series([0.02] * n_rbs)).fillna(0.02).values
             
             # Convert shares to Dirichlet alphas (higher alpha = more concentrated)
             carry_alphas = carry_shares * 10  # Scale up for reasonable concentration
@@ -218,7 +218,7 @@ class GameSimulator:
             return allocations
         
         # Get target shares
-        target_shares = receivers['target_share'].fillna(0.05).values
+        target_shares = receivers.get('target_share', pd.Series([0.05] * len(receivers))).fillna(0.05).values
         target_shares = target_shares / target_shares.sum()  # Normalize
         
         # Use Dirichlet distribution for allocation
