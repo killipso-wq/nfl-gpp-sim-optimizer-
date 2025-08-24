@@ -12,15 +12,20 @@ When run from the app/ subdirectory, this shim:
 
 import sys
 import os
+import importlib.util
 
 # Add the repository root to sys.path so we can import from the root level
 # This is needed because when running from app/, Python's module path doesn't include repo root
-repo_root = os.path.dirname(os.path.abspath(__file__))
+repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if repo_root not in sys.path:
     sys.path.insert(0, repo_root)
 
+# Import the root-level streamlit_app module directly by file path to avoid naming conflicts
 try:
-    import streamlit_app as ui
+    root_streamlit_path = os.path.join(repo_root, "streamlit_app.py")
+    spec = importlib.util.spec_from_file_location("root_streamlit_app", root_streamlit_path)
+    ui = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(ui)
 except Exception as e:
     raise SystemExit(f"Failed to import streamlit_app from repository root: {e}")
 
