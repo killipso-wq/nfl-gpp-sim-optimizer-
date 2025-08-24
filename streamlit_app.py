@@ -411,13 +411,16 @@ def main():
     version_banner()
 
     # Create tabs
-    tab1, tab2 = st.tabs(["Optimizer", "Weekly Review (MVP)"])
+    tab1, tab2, tab3 = st.tabs(["Optimizer", "Weekly Review (MVP)", "Simulator"])
     
     with tab1:
         optimizer_tab()
     
     with tab2:
         weekly_review_tab()
+        
+    with tab3:
+        simulator_tab()
 
 
 def optimizer_tab():
@@ -688,6 +691,413 @@ def weekly_review_tab():
                 st.info("No valid projection bias could be calculated. Check data format and overlap.")
         else:
             st.info("Upload player actuals to see projection calibration analysis.")
+
+
+def simulator_tab():
+    """NFL 2023-2024 baseline + 2025 week simulator functionality."""
+    st.header("NFL Simulator")
+    st.write("Build 2023-2024 baseline priors and simulate 2025 week projections using nfl_data_py.")
+    
+    # Section A: Build Baseline
+    st.subheader("📊 Build Baseline (2023-2024)")
+    st.write("Generate team and player priors from historical NFL data for simulation.")
+    
+    col1, col2 = st.columns(2)
+    with col1:
+        start_year = st.number_input("Start Year", min_value=2020, max_value=2024, value=2023)
+        end_year = st.number_input("End Year", min_value=2020, max_value=2024, value=2024)
+        
+    with col2:
+        st.info("Uses nfl_data_py to build team pace, pass rates, EPA metrics, and player usage/efficiency priors.")
+    
+    if st.button("🔄 Build Baseline", use_container_width=True):
+        try:
+            with st.spinner("Building baseline from historical data..."):
+                import sys
+                import os
+                sys.path.append('.')
+                
+                from src.metrics.pipeline import run_baseline_pipeline, create_team_priors, create_player_priors
+                
+                # Run the pipeline  
+                team_metrics_df, player_metrics_df, dst_metrics_df = run_baseline_pipeline(start_year, end_year)
+                
+                # Combine player and DST metrics
+                all_player_metrics = pd.concat([player_metrics_df, dst_metrics_df], ignore_index=True)
+                
+                # Create priors
+                team_priors_df = create_team_priors(team_metrics_df)
+                player_priors_df = create_player_priors(all_player_metrics)
+                
+                # Store in session state
+                st.session_state.team_priors_df = team_priors_df
+                st.session_state.player_priors_df = player_priors_df
+                
+                st.success(f"✅ Baseline built successfully!")
+                st.write(f"- **{len(team_priors_df)}** team priors generated")
+                st.write(f"- **{len(player_priors_df)}** player priors generated")
+                
+        except Exception as e:
+            st.error(f"Error building baseline: {e}")
+            
+    # Show baseline data if available
+    if hasattr(st.session_state, 'team_priors_df') and hasattr(st.session_state, 'player_priors_df'):
+        st.subheader("Baseline Data Preview")
+        
+        tab_team, tab_player = st.tabs(["Team Priors", "Player Priors"])
+        
+        with tab_team:
+            st.dataframe(st.session_state.team_priors_df.head(10), use_container_width=True)
+            
+            # Download button for team priors
+            team_csv = st.session_state.team_priors_df.to_csv(index=False).encode('utf-8')
+            st.download_button(
+                "📥 Download team_priors.csv",
+                data=team_csv,
+                file_name="team_priors.csv",
+                mime="text/csv"
+            )
+        
+        with tab_player:
+            st.dataframe(st.session_state.player_priors_df.head(10), use_container_width=True)
+            
+            # Download button for player priors
+            player_csv = st.session_state.player_priors_df.to_csv(index=False).encode('utf-8')
+            st.download_button(
+                "📥 Download player_priors.csv", 
+                data=player_csv,
+                file_name="player_priors.csv",
+                mime="text/csv"
+            )
+    
+    st.divider()
+    
+    # Section B: Run Week Simulation
+    st.subheader("🎯 Run Week Simulation")
+    st.write("Upload 2025 site players.csv and generate projections with value metrics and boom scores.")
+    
+    # File uploads
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        players_site_file = st.file_uploader(
+            "Site Players CSV (required)", 
+            type=["csv"], 
+            key="sim_players_csv",
+            help="CSV with columns: PLAYER, POS, TEAM, OPP, O/U, SPRD, SAL, RST%, optional FPTS"
+        )
+        
+        # Optional prior files
+        team_priors_file = st.file_uploader(
+            "Team Priors CSV (optional)",
+            type=["csv"], 
+            key="sim_team_priors",
+            help="Use custom team priors or leave empty to use built baseline"
+        )
+        
+    with col2:
+        player_priors_file = st.file_uploader(
+            "Player Priors CSV (optional)",
+            type=["csv"],
+            key="sim_player_priors", 
+            help="Use custom player priors or leave empty to use built baseline"
+        )
+        
+        boom_thresholds_file = st.file_uploader(
+            "Boom Thresholds JSON (optional)",
+            type=["json"],
+            key="sim_boom_thresholds",
+            help="Custom boom thresholds or leave empty for defaults"
+        )
+    
+    # Simulation parameters
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        season = st.number_input("Season", min_value=2024, max_value=2030, value=2025)
+    with col2:
+        week = st.number_input("Week", min_value=1, max_value=18, value=1)
+    with col3:
+        n_sims = st.number_input("Simulations", min_value=1000, max_value=50000, value=10000, step=1000)
+    
+    # Run simulation
+    if st.button("🚀 Run Simulation", use_container_width=True):
+        if not players_site_file:
+            st.error("Please upload a site players CSV file.")
+            st.stop()
+            
+        try:
+            with st.spinner("Running simulations..."):
+                # Load site players
+                from src.ingest.site_players import load_site_players
+                
+                site_players_df = load_site_players(players_site_file)
+                st.info(f"Loaded {len(site_players_df)} players from site data")
+                
+                # Load or use priors
+                if team_priors_file:
+                    team_priors_df = pd.read_csv(team_priors_file)
+                elif hasattr(st.session_state, 'team_priors_df'):
+                    team_priors_df = st.session_state.team_priors_df
+                else:
+                    st.error("No team priors available. Please build baseline first or upload team priors.")
+                    st.stop()
+                
+                if player_priors_file:
+                    player_priors_df = pd.read_csv(player_priors_file)
+                elif hasattr(st.session_state, 'player_priors_df'):
+                    player_priors_df = st.session_state.player_priors_df
+                else:
+                    st.error("No player priors available. Please build baseline first or upload player priors.")
+                    st.stop()
+                
+                # Load boom thresholds
+                if boom_thresholds_file:
+                    import json
+                    boom_data = json.load(boom_thresholds_file)
+                    boom_thresholds = boom_data.get('thresholds', {})
+                else:
+                    # Default thresholds
+                    boom_thresholds = {'QB': 25.0, 'RB': 20.0, 'WR': 18.0, 'TE': 15.0, 'DST': 10.0}
+                
+                # Run simulation
+                from src.sim.game_simulator import GameSimulator
+                from src.projections.value_metrics import calculate_value_metrics, calculate_positional_values
+                from src.projections.boom_score import calculate_boom_metrics
+                from src.projections.diagnostics import calculate_projection_diagnostics, identify_projection_flags
+                
+                simulator = GameSimulator(team_priors_df, player_priors_df)
+                sim_results = simulator.simulate_week(site_players_df, n_sims)
+                
+                # Calculate metrics
+                sim_with_value = calculate_value_metrics(sim_results, site_players_df)
+                sim_with_value = calculate_positional_values(sim_with_value)
+                sim_final = calculate_boom_metrics(sim_with_value, boom_thresholds, site_players_df)
+                
+                # Store results
+                st.session_state.sim_results = sim_final
+                st.session_state.site_players = site_players_df
+                st.session_state.boom_thresholds = boom_thresholds
+                
+                st.success(f"✅ Simulation complete! Generated projections for {len(sim_final)} players.")
+                
+        except Exception as e:
+            st.error(f"Error running simulation: {e}")
+            import traceback
+            st.text(traceback.format_exc())
+    
+    # Show results if available
+    if hasattr(st.session_state, 'sim_results'):
+        show_simulation_results()
+
+
+def show_simulation_results():
+    """Display simulation results with charts and download options."""
+    sim_df = st.session_state.sim_results
+    site_df = st.session_state.site_players
+    
+    st.subheader("📈 Simulation Results")
+    
+    # Results tabs
+    tab1, tab2, tab3, tab4, tab5 = st.tabs([
+        "Our Projections", "Compare to Site", "Diagnostics", "Flags", "Charts"
+    ])
+    
+    with tab1:
+        st.write("**Core simulation projections:**")
+        
+        # Select key columns for display
+        proj_cols = ['name', 'position', 'team', 'salary', 'proj_mean', 'p10', 'p75', 'p90', 'p95']
+        available_cols = [col for col in proj_cols if col in sim_df.columns]
+        
+        st.dataframe(
+            sim_df[available_cols].sort_values('proj_mean', ascending=False),
+            use_container_width=True
+        )
+        
+        # Download sim_players.csv
+        sim_csv = sim_df[available_cols].to_csv(index=False).encode('utf-8')
+        st.download_button(
+            "📥 Download sim_players.csv",
+            data=sim_csv,
+            file_name="sim_players.csv",
+            mime="text/csv"
+        )
+    
+    with tab2:
+        st.write("**Value metrics, boom probability, and site comparison:**")
+        
+        # Select compare columns
+        compare_cols = [
+            'name', 'position', 'team', 'salary', 'proj_mean', 
+            'value_per_1k', 'ceil_per_1k', 'boom_prob', 'boom_score', 'dart_flag'
+        ]
+        
+        # Add site comparison if available
+        if 'site_proj' in sim_df.columns:
+            compare_cols.extend(['site_proj', 'delta_vs_site', 'beat_site_prob'])
+        
+        if 'ownership' in sim_df.columns:
+            compare_cols.append('ownership')
+        
+        available_compare_cols = [col for col in compare_cols if col in sim_df.columns]
+        
+        # Show top value plays
+        st.write("**🎯 Top Value Plays:**")
+        if 'value_per_1k' in sim_df.columns:
+            top_value = sim_df.nlargest(10, 'value_per_1k')[available_compare_cols]
+            st.dataframe(top_value, use_container_width=True)
+        
+        # Show dart flags
+        st.write("**🎯 Dart Flags (Low ownership + High boom):**")
+        if 'dart_flag' in sim_df.columns:
+            dart_players = sim_df[sim_df['dart_flag'] == True][available_compare_cols]
+            if len(dart_players) > 0:
+                st.dataframe(dart_players.sort_values('boom_score', ascending=False), use_container_width=True)
+            else:
+                st.info("No dart flags identified")
+        
+        # Full comparison data
+        st.write("**📊 Full Comparison Data:**")
+        st.dataframe(
+            sim_df[available_compare_cols].sort_values('boom_score', ascending=False),
+            use_container_width=True
+        )
+        
+        # Download compare.csv
+        compare_csv = sim_df[available_compare_cols].to_csv(index=False).encode('utf-8')
+        st.download_button(
+            "📥 Download compare.csv",
+            data=compare_csv,
+            file_name="compare.csv",
+            mime="text/csv"
+        )
+    
+    with tab3:
+        st.write("**Projection accuracy diagnostics:**")
+        
+        if 'site_proj' in sim_df.columns:
+            from src.projections.diagnostics import calculate_projection_diagnostics
+            
+            diagnostics_df = calculate_projection_diagnostics(sim_df, site_df)
+            
+            if len(diagnostics_df) > 0:
+                st.dataframe(diagnostics_df, use_container_width=True)
+                
+                # Highlight overall metrics
+                overall = diagnostics_df[diagnostics_df['position'] == 'ALL']
+                if len(overall) > 0:
+                    overall_row = overall.iloc[0]
+                    
+                    col1, col2, col3, col4 = st.columns(4)
+                    with col1:
+                        st.metric("Correlation", f"{overall_row['correlation']:.3f}")
+                    with col2:
+                        st.metric("MAE", f"{overall_row['mae']:.2f}")
+                    with col3:
+                        st.metric("RMSE", f"{overall_row['rmse']:.2f}")
+                    with col4:
+                        st.metric("Coverage (p10-p90)", f"{overall_row['coverage_p10_p90']:.1%}")
+                
+                # Download diagnostics
+                diag_csv = diagnostics_df.to_csv(index=False).encode('utf-8')
+                st.download_button(
+                    "📥 Download diagnostics_summary.csv",
+                    data=diag_csv,
+                    file_name="diagnostics_summary.csv", 
+                    mime="text/csv"
+                )
+            else:
+                st.info("No diagnostics available - need site projections for comparison")
+        else:
+            st.info("No site projections available for diagnostic comparison")
+    
+    with tab4:
+        st.write("**Large projection mismatches for review:**")
+        
+        if 'site_proj' in sim_df.columns:
+            from src.projections.diagnostics import identify_projection_flags
+            
+            flags_df = identify_projection_flags(sim_df, site_df)
+            
+            if len(flags_df) > 0:
+                st.dataframe(flags_df, use_container_width=True)
+                
+                # Download flags
+                flags_csv = flags_df.to_csv(index=False).encode('utf-8')
+                st.download_button(
+                    "📥 Download flags.csv",
+                    data=flags_csv,
+                    file_name="flags.csv",
+                    mime="text/csv"
+                )
+            else:
+                st.info("No projection flags identified")
+        else:
+            st.info("No site projections available for flag identification")
+    
+    with tab5:
+        st.write("**Visualization charts:**")
+        
+        # Chart 1: Histogram of projections for selected player
+        player_names = sim_df['name'].tolist()
+        selected_player = st.selectbox("Select player for projection distribution", player_names)
+        
+        if selected_player:
+            player_data = sim_df[sim_df['name'] == selected_player].iloc[0]
+            
+            # Simulate distribution based on mean and std
+            mean_proj = player_data['proj_mean']
+            std_proj = player_data.get('std', mean_proj * 0.3)
+            
+            sim_points = np.random.normal(mean_proj, std_proj, 1000)
+            
+            # Create histogram
+            import altair as alt
+            
+            hist_data = pd.DataFrame({'fantasy_points': sim_points})
+            
+            chart = alt.Chart(hist_data).mark_bar().encode(
+                alt.X('fantasy_points:Q', bin=True, title='Fantasy Points'),
+                alt.Y('count()', title='Frequency'),
+                tooltip=['count()']
+            ).properties(
+                title=f'{selected_player} Projection Distribution',
+                width=600,
+                height=300
+            )
+            
+            st.altair_chart(chart, use_container_width=True)
+        
+        # Chart 2: Sim vs Site projections scatter
+        if 'site_proj' in sim_df.columns:
+            st.write("**Sim vs Site Projections:**")
+            
+            scatter_data = sim_df[['name', 'proj_mean', 'site_proj', 'position']].dropna()
+            
+            scatter_chart = alt.Chart(scatter_data).mark_circle(size=60).encode(
+                alt.X('site_proj:Q', title='Site Projection'),
+                alt.Y('proj_mean:Q', title='Sim Projection'),
+                alt.Color('position:N', title='Position'),
+                tooltip=['name:N', 'position:N', 'site_proj:Q', 'proj_mean:Q']
+            ).properties(
+                title='Simulation vs Site Projections',
+                width=600,
+                height=400
+            )
+            
+            # Add diagonal line for perfect correlation
+            line_data = pd.DataFrame({
+                'x': [scatter_data['site_proj'].min(), scatter_data['site_proj'].max()],
+                'y': [scatter_data['site_proj'].min(), scatter_data['site_proj'].max()]
+            })
+            
+            line_chart = alt.Chart(line_data).mark_line(color='red', strokeDash=[5, 5]).encode(
+                x='x:Q',
+                y='y:Q'
+            )
+            
+            combined_chart = scatter_chart + line_chart
+            st.altair_chart(combined_chart, use_container_width=True)
 
 
 if __name__ == "__main__":

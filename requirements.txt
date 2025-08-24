@@ -3,3 +3,4 @@ numpy>=1.26
 pulp>=2.7
 streamlit>=1.29,<2
 nfl_data_py>=0.3.0
+scipy>=1.10.0
