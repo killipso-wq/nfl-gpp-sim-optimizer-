@@ -1,0 +1,109 @@
+name: Egress allowlist smoke test
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/egress-allowlist-smoke.yml'
+
+jobs:
+  smoke-test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Test outbound connectivity
+        shell: bash
+        run: |
+          set -euo pipefail
+          
+          # Define critical endpoints to test
+          declare -a urls=(
+            # GitHub core services
+            "https://github.com"
+            "https://api.github.com"
+            "https://uploads.github.com"
+            "https://codeload.github.com"
+            "https://raw.githubusercontent.com"
+            "https://objects.githubusercontent.com"
+            "https://ghcr.io"
+            
+            # Package registries
+            "https://pypi.org"
+            "https://files.pythonhosted.org"
+            "https://registry.npmjs.org"
+            "https://registry.yarnpkg.com"
+            
+            # CDN and artifact endpoints
+            "https://fastly.com"
+            "https://jsdelivr.net"
+            "https://unpkg.com"
+            "https://cdnjs.cloudflare.com"
+            
+            # CI/CD and tooling
+            "https://download.docker.com"
+            "https://registry.hub.docker.com"
+            "https://quay.io"
+            
+            # ML/Data platforms
+            "https://huggingface.co"
+            "https://kaggle.com"
+            "https://datasets.huggingface.co"
+            
+            # Cloud providers (common for artifacts)
+            "https://amazonaws.com"
+            "https://storage.googleapis.com"
+            "https://azure.microsoft.com"
+            
+            # Additional GitHub endpoints
+            "https://githubassets.com"
+            "https://github.githubassets.com"
+            "https://collector.github.com"
+          )
+          
+          echo "🔍 Testing outbound connectivity to critical endpoints..."
+          echo "This verifies the Custom allowlist permits access to required services."
+          echo ""
+          
+          failed_urls=()
+          total_tests=${#urls[@]}
+          passed_tests=0
+          
+          for url in "${urls[@]}"; do
+            echo -n "Testing ${url}... "
+            
+            if curl -s --head --connect-timeout 10 --max-time 15 "${url}" > /dev/null 2>&1; then
+              echo "✅ OK"
+              ((passed_tests++))
+            else
+              echo "❌ BLOCKED/FAILED"
+              failed_urls+=("${url}")
+              
+              # Show verbose curl output for debugging
+              echo "  🔍 Verbose curl output for ${url}:"
+              curl -v --head --connect-timeout 10 --max-time 15 "${url}" 2>&1 | sed 's/^/    /' || true
+              echo ""
+            fi
+          done
+          
+          echo ""
+          echo "📊 Summary: ${passed_tests}/${total_tests} endpoints accessible"
+          
+          if [ ${#failed_urls[@]} -eq 0 ]; then
+            echo "🎉 All connectivity tests passed! Egress allowlist is properly configured."
+            exit 0
+          else
+            echo "❌ ${#failed_urls[@]} endpoint(s) failed connectivity test:"
+            for failed_url in "${failed_urls[@]}"; do
+              echo "  - ${failed_url}"
+            done
+            echo ""
+            echo "💡 These hostnames may need to be added to the Custom allowlist:"
+            for failed_url in "${failed_urls[@]}"; do
+              # Extract hostname from URL
+              hostname=$(echo "${failed_url}" | sed -E 's|https?://([^/]+).*|\1|')
+              echo "  - ${hostname}"
+            done
+            
+            echo ""
+            echo "After updating the allowlist, rerun this workflow to verify access."
+            exit 1
+          fi
