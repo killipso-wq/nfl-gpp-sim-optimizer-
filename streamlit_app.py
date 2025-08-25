@@ -9,6 +9,8 @@ import pandas as pd
 import numpy as np
 import streamlit as st
 
+from simulator import run_simulation
+
 
 def version_banner():
     branch = os.getenv("RENDER_GIT_BRANCH") or "local"
@@ -411,12 +413,15 @@ def main():
     version_banner()
 
     # Create tabs
-    tab1, tab2 = st.tabs(["Optimizer", "Weekly Review (MVP)"])
+    tab1, tab2, tab3 = st.tabs(["Optimizer", "Simulator", "Weekly Review (MVP)"])
     
     with tab1:
         optimizer_tab()
     
     with tab2:
+        simulator_tab()
+    
+    with tab3:
         weekly_review_tab()
 
 
@@ -542,6 +547,76 @@ def optimizer_tab():
             mime="application/zip",
             use_container_width=True,
         )
+
+
+def simulator_tab():
+    st.header("Simulator")
+    st.write("Run Monte Carlo simulations based on your Players CSV and download results.")
+
+    # Sidebar inputs
+    st.sidebar.header("Simulator Inputs")
+    players_file = st.sidebar.file_uploader("Players CSV (required)", type=["csv"], key="sim_players_csv")
+
+    col_a, col_b = st.sidebar.columns(2)
+    with col_a:
+        sims = st.number_input("Simulations per player", min_value=1000, max_value=200000, value=20000, step=1000)
+    with col_b:
+        seed = st.number_input("Random seed", min_value=0, max_value=999999, value=42, step=1)
+
+    run = st.button("Run simulation", type="primary", use_container_width=True)
+
+    if not run:
+        st.info("Upload your Players CSV and click Run simulation to generate outputs.")
+        return
+
+    if not players_file:
+        st.error("Players CSV is required.")
+        st.stop()
+
+    try:
+        players_df = pd.read_csv(players_file)
+    except Exception as e:
+        st.error(f"Failed to read Players CSV: {e}")
+        st.stop()
+
+    with st.spinner("Running simulations..."):
+        sim_players_df, compare_df, diagnostics_df, flags_df = run_simulation(players_df, n_sims=int(sims), seed=int(seed))
+
+    st.success("Simulation complete!")
+
+    c1, c2 = st.columns(2)
+    with c1:
+        st.subheader("sim_players.csv (preview)")
+        st.dataframe(sim_players_df.head(20), use_container_width=True)
+    with c2:
+        st.subheader("compare.csv (preview)")
+        st.dataframe(compare_df.head(20), use_container_width=True)
+
+    c3, c4 = st.columns(2)
+    with c3:
+        st.subheader("diagnostics_summary.csv")
+        st.dataframe(diagnostics_df, use_container_width=True)
+    with c4:
+        st.subheader("flags.csv")
+        st.dataframe(flags_df if not flags_df.empty else pd.DataFrame([{"info": "No flags"}]), use_container_width=True)
+
+    st.divider()
+    st.subheader("Downloads")
+
+    sim_players_bytes = sim_players_df.to_csv(index=False).encode("utf-8")
+    compare_bytes = compare_df.to_csv(index=False).encode("utf-8")
+    diagnostics_bytes = diagnostics_df.to_csv(index=False).encode("utf-8")
+    flags_bytes = flags_df.to_csv(index=False).encode("utf-8")
+
+    col1, col2, col3, col4 = st.columns(4)
+    with col1:
+        st.download_button("Download sim_players.csv", data=sim_players_bytes, file_name="sim_players.csv", mime="text/csv", use_container_width=True)
+    with col2:
+        st.download_button("Download compare.csv", data=compare_bytes, file_name="compare.csv", mime="text/csv", use_container_width=True)
+    with col3:
+        st.download_button("Download diagnostics_summary.csv", data=diagnostics_bytes, file_name="diagnostics_summary.csv", mime="text/csv", use_container_width=True)
+    with col4:
+        st.download_button("Download flags.csv", data=flags_bytes, file_name="flags.csv", mime="text/csv", use_container_width=True)
 
 
 def weekly_review_tab():
