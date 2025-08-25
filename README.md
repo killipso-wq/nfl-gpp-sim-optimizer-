@@ -2,6 +2,22 @@
 
 A Streamlit web application for NFL GPP (Guaranteed Prize Pool) optimization with simulation blend projections.
 
+## Methodology
+
+This optimizer uses a Monte Carlo simulation approach to generate fantasy football projections. The methodology combines historical performance data (2023-2024 seasons) with current week site projections to create robust, position-calibrated fantasy point distributions.
+
+**Key Features:**
+- Position-specific statistical models (normal/lognormal distributions)
+- Seeded Monte Carlo simulation for reproducible results
+- Historical baseline priors with rookie fallback to site projections
+- Boom probability analysis using quantile-based thresholds
+- Comprehensive diagnostic validation
+
+**Documentation:**
+- [Master Reference](docs/master_reference.md) - Complete methodology overview
+- [Research PDF](docs/research/monte_carlo_football.pdf) - Detailed statistical methodology *(to be uploaded)*
+- [Monte Carlo Methodology](docs/research/monte_carlo_methodology.md) - Implementation details
+
 ## Features
 
 - Upload CSV files for players, simulations, defense, and stack configurations
