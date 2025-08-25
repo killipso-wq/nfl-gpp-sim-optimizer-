@@ -1,0 +1,234 @@
+name: Egress allowlist smoke
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/egress-allowlist-smoke.yml'
+
+jobs:
+  smoke-test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        group: [core, packages, containers, osdeps, ml, cdn]
+      fail-fast: false
+    name: Test ${{ matrix.group }} endpoints
+    steps:
+      - name: Test core endpoints
+        if: matrix.group == 'core'
+        run: |
+          echo "Testing core GitHub/Copilot endpoints..."
+          endpoints=(
+            "https://api.github.com/meta"
+            "https://raw.githubusercontent.com"
+            "https://codeload.github.com"
+            "https://uploads.github.com"
+            "https://objects.githubusercontent.com"
+            "https://media.githubusercontent.com"
+            "https://user-images.githubusercontent.com"
+            "https://avatars.githubusercontent.com"
+            "https://github.githubassets.com"
+            "https://camo.githubusercontent.com"
+            "https://live.github.com"
+            "https://api.githubcopilot.com"
+            "https://actions.githubusercontent.com"
+            "https://pipelines.actions.githubusercontent.com"
+            "https://github-releases.githubusercontent.com"
+            "https://packages.githubusercontent.com"
+            "https://ghcr.io/v2/"
+            "https://pkg-containers.githubusercontent.com"
+          )
+          
+          failed_endpoints=()
+          for endpoint in "${endpoints[@]}"; do
+            echo "Testing: $endpoint"
+            if ! curl --silent --fail --max-time 10 --head "$endpoint" > /dev/null 2>&1; then
+              echo "❌ FAILED: $endpoint"
+              failed_endpoints+=("$endpoint")
+            else
+              echo "✅ SUCCESS: $endpoint"
+            fi
+          done
+          
+          if [ ${#failed_endpoints[@]} -gt 0 ]; then
+            echo ""
+            echo "Failed endpoints:"
+            for endpoint in "${failed_endpoints[@]}"; do
+              echo "  - $endpoint"
+            done
+            exit 1
+          fi
+
+      - name: Test packages endpoints
+        if: matrix.group == 'packages'
+        run: |
+          echo "Testing package registry endpoints..."
+          endpoints=(
+            "https://pypi.org/simple/pip/"
+            "https://files.pythonhosted.org/robots.txt"
+            "https://registry.npmjs.org/npm"
+            "https://registry.yarnpkg.com/npm"
+            "https://nodejs.org/dist/index.json"
+            "https://rubygems.org"
+            "https://repo.maven.apache.org/maven2/"
+            "https://repo1.maven.org/maven2/"
+            "https://api.nuget.org/v3/index.json"
+            "https://globalcdn.nuget.org"
+            "https://crates.io"
+            "https://static.crates.io"
+            "https://proxy.golang.org"
+            "https://sum.golang.org"
+            "https://repo.packagist.org"
+            "https://deno.land"
+          )
+          
+          failed_endpoints=()
+          for endpoint in "${endpoints[@]}"; do
+            echo "Testing: $endpoint"
+            if ! curl --silent --fail --max-time 10 --head "$endpoint" > /dev/null 2>&1; then
+              echo "❌ FAILED: $endpoint"
+              failed_endpoints+=("$endpoint")
+            else
+              echo "✅ SUCCESS: $endpoint"
+            fi
+          done
+          
+          if [ ${#failed_endpoints[@]} -gt 0 ]; then
+            echo ""
+            echo "Failed endpoints:"
+            for endpoint in "${failed_endpoints[@]}"; do
+              echo "  - $endpoint"
+            done
+            exit 1
+          fi
+
+      - name: Test containers endpoints
+        if: matrix.group == 'containers'
+        run: |
+          echo "Testing container registry endpoints..."
+          endpoints=(
+            "https://registry-1.docker.io/v2/"
+            "https://auth.docker.io/token"
+            "https://production.cloudflare.docker.com"
+            "https://quay.io/v2/"
+            "https://public.ecr.aws"
+          )
+          
+          failed_endpoints=()
+          for endpoint in "${endpoints[@]}"; do
+            echo "Testing: $endpoint"
+            if ! curl --silent --fail --max-time 10 --head "$endpoint" > /dev/null 2>&1; then
+              echo "❌ FAILED: $endpoint"
+              failed_endpoints+=("$endpoint")
+            else
+              echo "✅ SUCCESS: $endpoint"
+            fi
+          done
+          
+          if [ ${#failed_endpoints[@]} -gt 0 ]; then
+            echo ""
+            echo "Failed endpoints:"
+            for endpoint in "${failed_endpoints[@]}"; do
+              echo "  - $endpoint"
+            done
+            exit 1
+          fi
+
+      - name: Test osdeps endpoints
+        if: matrix.group == 'osdeps'
+        run: |
+          echo "Testing OS dependencies endpoints..."
+          endpoints=(
+            "https://archive.ubuntu.com/ubuntu/"
+            "https://security.ubuntu.com/ubuntu/"
+            "https://ppa.launchpadcontent.net"
+            "https://packages.microsoft.com"
+            "https://packages.cloud.google.com"
+            "https://download.docker.com"
+            "https://deb.nodesource.com"
+            "https://getcomposer.org"
+            "https://static.rust-lang.org"
+          )
+          
+          failed_endpoints=()
+          for endpoint in "${endpoints[@]}"; do
+            echo "Testing: $endpoint"
+            if ! curl --silent --fail --max-time 10 --head "$endpoint" > /dev/null 2>&1; then
+              echo "❌ FAILED: $endpoint"
+              failed_endpoints+=("$endpoint")
+            else
+              echo "✅ SUCCESS: $endpoint"
+            fi
+          done
+          
+          if [ ${#failed_endpoints[@]} -gt 0 ]; then
+            echo ""
+            echo "Failed endpoints:"
+            for endpoint in "${failed_endpoints[@]}"; do
+              echo "  - $endpoint"
+            done
+            exit 1
+          fi
+
+      - name: Test ml endpoints
+        if: matrix.group == 'ml'
+        run: |
+          echo "Testing ML endpoints..."
+          endpoints=(
+            "https://download.pytorch.org/whl/torch/"
+            "https://huggingface.co"
+            "https://cdn-lfs.huggingface.co"
+            "https://storage.googleapis.com"
+            "https://dl.google.com"
+          )
+          
+          failed_endpoints=()
+          for endpoint in "${endpoints[@]}"; do
+            echo "Testing: $endpoint"
+            if ! curl --silent --fail --max-time 10 --head "$endpoint" > /dev/null 2>&1; then
+              echo "❌ FAILED: $endpoint"
+              failed_endpoints+=("$endpoint")
+            else
+              echo "✅ SUCCESS: $endpoint"
+            fi
+          done
+          
+          if [ ${#failed_endpoints[@]} -gt 0 ]; then
+            echo ""
+            echo "Failed endpoints:"
+            for endpoint in "${failed_endpoints[@]}"; do
+              echo "  - $endpoint"
+            done
+            exit 1
+          fi
+
+      - name: Test cdn endpoints
+        if: matrix.group == 'cdn'
+        run: |
+          echo "Testing CDN endpoints..."
+          endpoints=(
+            "https://cdn.jsdelivr.net"
+            "https://cdnjs.cloudflare.com"
+            "https://unpkg.com"
+          )
+          
+          failed_endpoints=()
+          for endpoint in "${endpoints[@]}"; do
+            echo "Testing: $endpoint"
+            if ! curl --silent --fail --max-time 10 --head "$endpoint" > /dev/null 2>&1; then
+              echo "❌ FAILED: $endpoint"
+              failed_endpoints+=("$endpoint")
+            else
+              echo "✅ SUCCESS: $endpoint"
+            fi
+          done
+          
+          if [ ${#failed_endpoints[@]} -gt 0 ]; then
+            echo ""
+            echo "Failed endpoints:"
+            for endpoint in "${failed_endpoints[@]}"; do
+              echo "  - $endpoint"
+            done
+            exit 1
+          fi
