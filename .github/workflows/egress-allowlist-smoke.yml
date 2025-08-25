@@ -43,11 +43,12 @@ jobs:
           failed_endpoints=()
           for endpoint in "${endpoints[@]}"; do
             echo "Testing: $endpoint"
-            if ! curl --silent --fail --max-time 10 --head "$endpoint" > /dev/null 2>&1; then
-              echo "❌ FAILED: $endpoint"
-              failed_endpoints+=("$endpoint")
+            http_code=$(curl --silent --max-time 10 --head --write-out "%{http_code}" --output /dev/null "$endpoint" 2>/dev/null || echo "000")
+            if [[ $http_code != "000" && $http_code -ge 200 ]]; then
+              echo "✅ SUCCESS: $endpoint (HTTP $http_code)"
             else
-              echo "✅ SUCCESS: $endpoint"
+              echo "❌ FAILED: $endpoint (Network error or HTTP $http_code)"
+              failed_endpoints+=("$endpoint")
             fi
           done
           
@@ -86,11 +87,12 @@ jobs:
           failed_endpoints=()
           for endpoint in "${endpoints[@]}"; do
             echo "Testing: $endpoint"
-            if ! curl --silent --fail --max-time 10 --head "$endpoint" > /dev/null 2>&1; then
-              echo "❌ FAILED: $endpoint"
-              failed_endpoints+=("$endpoint")
+            http_code=$(curl --silent --max-time 10 --head --write-out "%{http_code}" --output /dev/null "$endpoint" 2>/dev/null || echo "000")
+            if [[ $http_code != "000" && $http_code -ge 200 ]]; then
+              echo "✅ SUCCESS: $endpoint (HTTP $http_code)"
             else
-              echo "✅ SUCCESS: $endpoint"
+              echo "❌ FAILED: $endpoint (Network error or HTTP $http_code)"
+              failed_endpoints+=("$endpoint")
             fi
           done
           
@@ -118,11 +120,12 @@ jobs:
           failed_endpoints=()
           for endpoint in "${endpoints[@]}"; do
             echo "Testing: $endpoint"
-            if ! curl --silent --fail --max-time 10 --head "$endpoint" > /dev/null 2>&1; then
-              echo "❌ FAILED: $endpoint"
-              failed_endpoints+=("$endpoint")
+            http_code=$(curl --silent --max-time 10 --head --write-out "%{http_code}" --output /dev/null "$endpoint" 2>/dev/null || echo "000")
+            if [[ $http_code != "000" && $http_code -ge 200 ]]; then
+              echo "✅ SUCCESS: $endpoint (HTTP $http_code)"
             else
-              echo "✅ SUCCESS: $endpoint"
+              echo "❌ FAILED: $endpoint (Network error or HTTP $http_code)"
+              failed_endpoints+=("$endpoint")
             fi
           done
           
@@ -154,11 +157,12 @@ jobs:
           failed_endpoints=()
           for endpoint in "${endpoints[@]}"; do
             echo "Testing: $endpoint"
-            if ! curl --silent --fail --max-time 10 --head "$endpoint" > /dev/null 2>&1; then
-              echo "❌ FAILED: $endpoint"
-              failed_endpoints+=("$endpoint")
+            http_code=$(curl --silent --max-time 10 --head --write-out "%{http_code}" --output /dev/null "$endpoint" 2>/dev/null || echo "000")
+            if [[ $http_code != "000" && $http_code -ge 200 ]]; then
+              echo "✅ SUCCESS: $endpoint (HTTP $http_code)"
             else
-              echo "✅ SUCCESS: $endpoint"
+              echo "❌ FAILED: $endpoint (Network error or HTTP $http_code)"
+              failed_endpoints+=("$endpoint")
             fi
           done
           
@@ -186,11 +190,12 @@ jobs:
           failed_endpoints=()
           for endpoint in "${endpoints[@]}"; do
             echo "Testing: $endpoint"
-            if ! curl --silent --fail --max-time 10 --head "$endpoint" > /dev/null 2>&1; then
-              echo "❌ FAILED: $endpoint"
-              failed_endpoints+=("$endpoint")
+            http_code=$(curl --silent --max-time 10 --head --write-out "%{http_code}" --output /dev/null "$endpoint" 2>/dev/null || echo "000")
+            if [[ $http_code != "000" && $http_code -ge 200 ]]; then
+              echo "✅ SUCCESS: $endpoint (HTTP $http_code)"
             else
-              echo "✅ SUCCESS: $endpoint"
+              echo "❌ FAILED: $endpoint (Network error or HTTP $http_code)"
+              failed_endpoints+=("$endpoint")
             fi
           done
           
@@ -216,11 +221,12 @@ jobs:
           failed_endpoints=()
           for endpoint in "${endpoints[@]}"; do
             echo "Testing: $endpoint"
-            if ! curl --silent --fail --max-time 10 --head "$endpoint" > /dev/null 2>&1; then
-              echo "❌ FAILED: $endpoint"
-              failed_endpoints+=("$endpoint")
+            http_code=$(curl --silent --max-time 10 --head --write-out "%{http_code}" --output /dev/null "$endpoint" 2>/dev/null || echo "000")
+            if [[ $http_code != "000" && $http_code -ge 200 ]]; then
+              echo "✅ SUCCESS: $endpoint (HTTP $http_code)"
             else
-              echo "✅ SUCCESS: $endpoint"
+              echo "❌ FAILED: $endpoint (Network error or HTTP $http_code)"
+              failed_endpoints+=("$endpoint")
             fi
           done
           
