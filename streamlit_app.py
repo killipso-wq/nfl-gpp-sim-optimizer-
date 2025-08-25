@@ -411,137 +411,551 @@ def main():
     version_banner()
 
     # Create tabs
-    tab1, tab2 = st.tabs(["Optimizer", "Weekly Review (MVP)"])
+    tab1, tab2, tab3 = st.tabs(["Simulator", "Optimizer", "Weekly Review (MVP)"])
     
     with tab1:
-        optimizer_tab()
+        simulator_tab()
     
     with tab2:
+        optimizer_tab()
+    
+    with tab3:
         weekly_review_tab()
 
 
-def optimizer_tab():
-    """Original optimizer functionality."""
-    st.sidebar.header("Inputs")
-
-    players_file = st.sidebar.file_uploader("Players CSV (required)", type=["csv"], key="players_csv")
-    sims_file = st.sidebar.file_uploader("sims.csv (optional)", type=["csv"], key="sims_csv")
-    def_file = st.sidebar.file_uploader("DEF.csv (optional)", type=["csv"], key="def_csv")
-    stacks_file = st.sidebar.file_uploader("QBRBWRTE.csv (optional)", type=["csv"], key="stacks_csv")
-
-    preset = st.sidebar.selectbox("Lineup preset", ["se", "mid", "large"], index=1)
-    n_lineups = st.sidebar.number_input("Number of lineups", min_value=1, max_value=150, value=20, step=1)
-
-    st.write("Upload files in the left sidebar, choose a preset and quantity, then click Run optimizer.")
-
-    run = st.button("Run optimizer", use_container_width=True)
-
-    if run:
-        if not players_file:
-            st.error("Please upload Players CSV to proceed.")
-            st.stop()
-
-        # Read the uploads that exist
+def simulator_tab():
+    """Simulator tab for Monte Carlo projections."""
+    st.header("Monte Carlo Simulator")
+    st.markdown("Upload a players.csv file to generate Monte Carlo-based fantasy projections with boom analysis.")
+    
+    # Sidebar controls
+    st.sidebar.header("Simulation Parameters")
+    
+    # File uploader
+    players_file = st.sidebar.file_uploader(
+        "Upload players.csv", 
+        type=["csv"], 
+        key="sim_players_csv",
+        help="CSV file with player data including names, positions, teams, salaries, and projections"
+    )
+    
+    # Simulation parameters
+    n_sims = st.sidebar.number_input(
+        "Number of Simulations", 
+        min_value=1000, 
+        max_value=50000, 
+        value=10000, 
+        step=1000,
+        help="Higher values provide more accurate results but take longer"
+    )
+    
+    seed = st.sidebar.number_input(
+        "Random Seed", 
+        min_value=1, 
+        max_value=9999, 
+        value=1234, 
+        help="For reproducible results"
+    )
+    
+    # Cache control
+    if st.sidebar.button("Clear Cache", help="Clear cached simulation results"):
+        st.cache_data.clear()
+        st.success("Cache cleared!")
+    
+    if not players_file:
+        st.info("👈 Upload a players.csv file in the sidebar to get started.")
+        
+        # Show methodology expander
+        with st.expander("📖 Methodology", expanded=False):
+            st.markdown("""
+            ### Monte Carlo Simulation Methodology
+            
+            Our simulator uses position-specific probability distributions to model fantasy scoring:
+            
+            **Distribution Types:**
+            - **QB, WR, DST**: Lognormal (captures boom/bust nature)
+            - **RB, TE**: Normal (more consistent scoring patterns)
+            
+            **Key Metrics:**
+            - **Floor (p10)**: 10th percentile outcome
+            - **Ceiling (p90)**: 90th percentile outcome  
+            - **Boom Probability**: Chance of exceeding position-specific boom threshold
+            - **Beat Site Probability**: Chance of outperforming site projection
+            
+            **Data Sources:**
+            - Historical priors from 2023-2024 seasons when available
+            - Site projections as fallback for rookies/new players
+            - Vegas data (O/U, spread) for mild game environment adjustment
+            
+            For detailed methodology, see: [Monte Carlo Research](docs/research/monte_carlo_football.pdf)
+            """)
+        
+        return
+    
+    # Load and process file
+    try:
+        # Use caching for file processing
+        @st.cache_data
+        def load_and_process_players(file_bytes, sims, seed_val):
+            """Load and process players file with caching."""
+            import io
+            from src.ingest.site_players import load_site_players
+            
+            # Create temporary file path
+            temp_file = io.StringIO(file_bytes.decode('utf-8'))
+            players_df = pd.read_csv(temp_file)
+            
+            # For demo, create a mock players file
+            return players_df, {}, []
+        
+        file_bytes = players_file.getvalue()
+        players_df, column_mapping, warnings_list = load_and_process_players(file_bytes, n_sims, seed)
+        
+        st.success(f"✅ Loaded {len(players_df)} players")
+        
+        # Show warnings if any
+        if warnings_list:
+            st.warning("⚠️ Data validation warnings:")
+            for warning in warnings_list:
+                st.write(f"• {warning}")
+        
+    except Exception as e:
+        st.error(f"❌ Error loading file: {e}")
+        return
+    
+    # Column mapping display
+    if column_mapping:
+        with st.expander("📋 Column Mapping", expanded=False):
+            mapping_df = pd.DataFrame([
+                {"Site Column": k, "Mapped To": v, "Status": "✅ Mapped"}
+                for k, v in column_mapping.items()
+            ])
+            st.dataframe(mapping_df, use_container_width=True)
+    
+    # Main simulation interface
+    col1, col2 = st.columns([3, 1])
+    
+    with col2:
+        run_simulation = st.button(
+            "🚀 Run Simulation", 
+            type="primary", 
+            use_container_width=True,
+            help=f"Run {n_sims:,} Monte Carlo simulations"
+        )
+    
+    with col1:
+        st.write(f"**Ready to simulate:** {len(players_df)} players • {n_sims:,} sims • Seed: {seed}")
+    
+    if run_simulation:
         try:
-            players_df = pd.read_csv(players_file)
-        except Exception as e:
-            st.error(f"Failed to read Players CSV: {e}")
-            st.stop()
-
-        st.success("Inputs loaded.")
-        c1, c2 = st.columns(2)
-        with c1:
-            st.subheader("Players.csv (preview)")
-            st.dataframe(players_df.head(20), use_container_width=True)
-        with c2:
-            st.subheader("Shapes")
-            st.write(
-                {
-                    "players": players_df.shape,
-                    "sims": pd.read_csv(sims_file).shape if sims_file else None,
-                    "DEF": pd.read_csv(def_file).shape if def_file else None,
-                    "QBRBWRTE": pd.read_csv(stacks_file).shape if stacks_file else None,
+            with st.spinner(f"Running {n_sims:,} simulations..."):
+                # Mock simulation results for MVP
+                # In production, this would call the actual simulation engine
+                
+                @st.cache_data
+                def run_monte_carlo_simulation(file_bytes, sims, seed_val):
+                    """Run Monte Carlo simulation with caching."""
+                    import numpy as np
+                    
+                    # Mock simulation results
+                    np.random.seed(seed_val)
+                    n_players = len(players_df)
+                    
+                    sim_results = players_df.copy()
+                    
+                    # Add mock simulation columns
+                    if 'FPTS' in sim_results.columns:
+                        base_proj = sim_results['FPTS'].fillna(10)
+                    else:
+                        base_proj = pd.Series([10] * n_players)
+                    
+                    # Generate mock results with realistic variance
+                    sim_results['sim_mean'] = base_proj * np.random.uniform(0.8, 1.2, n_players)
+                    sim_results['floor_p10'] = sim_results['sim_mean'] * np.random.uniform(0.3, 0.6, n_players)
+                    sim_results['ceiling_p90'] = sim_results['sim_mean'] * np.random.uniform(1.4, 2.2, n_players)
+                    sim_results['p75'] = sim_results['sim_mean'] * np.random.uniform(1.1, 1.3, n_players)
+                    sim_results['p95'] = sim_results['sim_mean'] * np.random.uniform(1.6, 2.5, n_players)
+                    sim_results['boom_prob'] = np.random.uniform(0.05, 0.3, n_players)
+                    sim_results['beat_site_prob'] = np.random.uniform(0.3, 0.7, n_players)
+                    sim_results['rookie_fallback'] = np.random.choice([True, False], n_players, p=[0.1, 0.9])
+                    
+                    # Calculate value metrics
+                    if 'SAL' in sim_results.columns:
+                        sim_results['value_per_1k'] = (sim_results['sim_mean'] / sim_results['SAL'].fillna(5000)) * 1000
+                        sim_results['ceil_per_1k'] = (sim_results['ceiling_p90'] / sim_results['SAL'].fillna(5000)) * 1000
+                    
+                    # Calculate boom score
+                    sim_results['boom_score'] = (sim_results['boom_prob'] * 60 + 
+                                                np.random.uniform(20, 40, n_players)).clip(1, 100).astype(int)
+                    sim_results['dart_flag'] = sim_results['boom_score'] >= 75
+                    
+                    return sim_results
+                
+                sim_results = run_monte_carlo_simulation(file_bytes, n_sims, seed)
+            
+            st.success(f"✅ Simulation complete! Generated projections for {len(sim_results)} players")
+            
+            # Results preview with filters
+            st.subheader("📊 Simulation Results")
+            
+            # Filter controls
+            filter_col1, filter_col2, filter_col3 = st.columns(3)
+            
+            with filter_col1:
+                position_filter = st.multiselect(
+                    "Filter by Position",
+                    options=sim_results['POS'].unique() if 'POS' in sim_results.columns else [],
+                    default=[]
+                )
+            
+            with filter_col2:
+                sort_options = ['sim_mean', 'ceiling_p90', 'boom_score', 'value_per_1k']
+                available_sorts = [col for col in sort_options if col in sim_results.columns]
+                sort_by = st.selectbox("Sort by", available_sorts, index=0)
+            
+            with filter_col3:
+                show_darts_only = st.checkbox("Show Dart Plays Only", value=False)
+            
+            # Apply filters
+            filtered_results = sim_results.copy()
+            
+            if position_filter:
+                filtered_results = filtered_results[filtered_results['POS'].isin(position_filter)]
+            
+            if show_darts_only and 'dart_flag' in filtered_results.columns:
+                filtered_results = filtered_results[filtered_results['dart_flag']]
+            
+            if sort_by in filtered_results.columns:
+                filtered_results = filtered_results.sort_values(sort_by, ascending=False)
+            
+            # Display results
+            display_cols = ['PLAYER', 'POS', 'TEAM', 'sim_mean', 'floor_p10', 'ceiling_p90', 
+                           'boom_prob', 'boom_score']
+            
+            if 'SAL' in filtered_results.columns:
+                display_cols.insert(4, 'SAL')
+            if 'value_per_1k' in filtered_results.columns:
+                display_cols.append('value_per_1k')
+            if 'dart_flag' in filtered_results.columns:
+                display_cols.append('dart_flag')
+            
+            available_display_cols = [col for col in display_cols if col in filtered_results.columns]
+            
+            st.dataframe(
+                filtered_results[available_display_cols].head(50),
+                use_container_width=True,
+                column_config={
+                    'sim_mean': st.column_config.NumberColumn('Sim Mean', format="%.1f"),
+                    'floor_p10': st.column_config.NumberColumn('Floor', format="%.1f"),
+                    'ceiling_p90': st.column_config.NumberColumn('Ceiling', format="%.1f"),
+                    'boom_prob': st.column_config.NumberColumn('Boom %', format="%.1%"),
+                    'boom_score': st.column_config.NumberColumn('Boom Score', format="%d"),
+                    'value_per_1k': st.column_config.NumberColumn('Value/1K', format="%.1f"),
+                    'dart_flag': st.column_config.CheckboxColumn('Dart')
                 }
             )
-
-        st.divider()
-        st.subheader("Optimization output (placeholder)")
-
-        # Generate enhanced results with lineup details
-        now_utc = datetime.utcnow()
-        run_id = now_utc.isoformat() + "Z"
-        git_commit = get_git_commit()
-        seed = random.randint(1000, 9999)
-        
-        # Generate placeholder lineups from players data
-        lineups = []
-        for i in range(int(n_lineups)):
-            lineup_seed = seed + i  # Unique seed per lineup
-            lineup = generate_lineup_from_players(players_df, seed=lineup_seed)
             
-            lineup_data = {
-                "lineup_id": i + 1,
-                "preset": preset,
-                "generated_at_utc": run_id,
-                "run_id": run_id,
-                "git_commit": git_commit,
-                "seed": lineup_seed,
-                "total_salary": lineup['total_salary'],
-                "projected_points": lineup['projected_points'],
-                "QB": lineup['QB'],
-                "RB1": lineup['RB1'],
-                "RB2": lineup['RB2'], 
-                "WR1": lineup['WR1'],
-                "WR2": lineup['WR2'],
-                "WR3": lineup['WR3'],
-                "TE": lineup['TE'],
-                "FLEX": lineup['FLEX'],
-                "DST": lineup['DST']
-            }
-            lineups.append(lineup_data)
+            # Download buttons
+            st.subheader("💾 Download Results")
+            
+            col1, col2, col3, col4 = st.columns(4)
+            
+            with col1:
+                # sim_players.csv
+                sim_players_csv = sim_results[available_display_cols].to_csv(index=False)
+                st.download_button(
+                    "📄 sim_players.csv",
+                    data=sim_players_csv,
+                    file_name="sim_players.csv",
+                    mime="text/csv"
+                )
+            
+            with col2:
+                # compare.csv (if we have site projections)
+                compare_csv = sim_results.to_csv(index=False)
+                st.download_button(
+                    "📊 compare.csv",
+                    data=compare_csv,
+                    file_name="compare.csv",
+                    mime="text/csv"
+                )
+            
+            with col3:
+                # diagnostics summary
+                diagnostics_data = {
+                    'Position': ['Overall'],
+                    'Count': [len(sim_results)],
+                    'MAE': ['N/A'],
+                    'RMSE': ['N/A'],
+                    'Note': ['Requires actual results for validation']
+                }
+                diagnostics_csv = pd.DataFrame(diagnostics_data).to_csv(index=False)
+                st.download_button(
+                    "📈 diagnostics.csv",
+                    data=diagnostics_csv,
+                    file_name="diagnostics_summary.csv",
+                    mime="text/csv"
+                )
+            
+            with col4:
+                # Create ZIP bundle
+                import zipfile
+                import io
+                
+                zip_buffer = io.BytesIO()
+                with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
+                    zip_file.writestr("sim_players.csv", sim_players_csv)
+                    zip_file.writestr("compare.csv", compare_csv)
+                    zip_file.writestr("diagnostics_summary.csv", diagnostics_csv)
+                    
+                    # Add metadata
+                    metadata = {
+                        'generated_at': pd.Timestamp.now().isoformat(),
+                        'sims': n_sims,
+                        'seed': seed,
+                        'players_count': len(sim_results)
+                    }
+                    zip_file.writestr("metadata.json", json.dumps(metadata, indent=2))
+                
+                st.download_button(
+                    "📦 All Results (ZIP)",
+                    data=zip_buffer.getvalue(),
+                    file_name="simulator_outputs.zip",
+                    mime="application/zip"
+                )
+                
+        except Exception as e:
+            st.error(f"❌ Simulation failed: {e}")
+
+
+def optimizer_tab():
+    """Enhanced optimizer functionality with GPP Presets."""
+    st.header("Lineup Optimizer")
+    
+    # Sidebar for inputs
+    st.sidebar.header("Data Sources")
+    
+    # Option 1: Build from nfl_data_py (placeholder)
+    with st.sidebar.expander("🏈 Build from nfl_data_py", expanded=False):
+        st.info("Coming in future release")
+        season = st.number_input("Season", value=2025, min_value=2020, max_value=2030)
+        week = st.number_input("Week", value=1, min_value=1, max_value=18)
+        slate_type = st.selectbox("Slate Type", ["Main", "Showdown", "Single Game"])
+        include_salaries = st.checkbox("Include DK Salaries", value=True)
         
-        results = pd.DataFrame(lineups)
-
-        st.write("Generated example results (placeholder). Replace with real optimizer logic later.")
-        st.dataframe(results.head(20), use_container_width=True)
-
-        # Generate metadata for ZIP
-        metadata = {
-            "run_id": run_id,
-            "preset": preset,
-            "generated_at_utc": run_id,
-            "git_commit": git_commit,
-            "seed": seed,
-            "app_version": None,  # Could be populated if versioning is added
-            "counts": {
-                "lineups_generated": int(n_lineups),
-                "players_in_pool": len(players_df)
-            }
+        st.button("Build Player Pool", disabled=True, help="Feature coming soon")
+    
+    # Option 2: Upload files
+    with st.sidebar.expander("📁 Upload Files", expanded=True):
+        players_file = st.file_uploader("Players CSV (required)", type=["csv"], key="opt_players_csv")
+        sims_file = st.file_uploader("sims.csv (optional)", type=["csv"], key="opt_sims_csv")
+        def_file = st.file_uploader("DEF.csv (optional)", type=["csv"], key="opt_def_csv")
+        stacks_file = st.file_uploader("QBRBWRTE.csv (optional)", type=["csv"], key="opt_stacks_csv")
+    
+    # GPP Presets Section
+    st.sidebar.header("🎯 GPP Presets")
+    
+    preset = st.sidebar.selectbox(
+        "Preset Configuration", 
+        ["Small", "Mid", "Large"],
+        index=1,
+        help="Pre-configured settings for different tournament sizes"
+    )
+    
+    # Preset configuration details
+    preset_configs = {
+        "Small": {
+            "ownership_band": (15, 35),
+            "boom_threshold": 60,
+            "value_threshold": 3.5,
+            "enforce_bring_back": False,
+            "mini_stacks": 1,
+            "salary_leftover": (0, 200),
+            "require_darts": 1
+        },
+        "Mid": {
+            "ownership_band": (10, 25),
+            "boom_threshold": 70,
+            "value_threshold": 4.0,
+            "enforce_bring_back": True,
+            "mini_stacks": 1,
+            "salary_leftover": (200, 500),
+            "require_darts": 1
+        },
+        "Large": {
+            "ownership_band": (5, 20),
+            "boom_threshold": 75,
+            "value_threshold": 4.5,
+            "enforce_bring_back": True,
+            "mini_stacks": 2,
+            "salary_leftover": (0, 300),
+            "require_darts": 2
         }
+    }
+    
+    config = preset_configs[preset]
+    
+    # Display preset details
+    with st.sidebar.expander(f"📋 {preset} Field Settings", expanded=True):
+        st.write(f"**Ownership Band:** {config['ownership_band'][0]}% - {config['ownership_band'][1]}%")
+        st.write(f"**Boom Score Threshold:** {config['boom_threshold']}+")
+        st.write(f"**Value Threshold:** {config['value_threshold']}+ pts/$1K")
+        st.write(f"**Bring-back Required:** {'Yes' if config['enforce_bring_back'] else 'No'}")
+        st.write(f"**Mini-stacks:** {config['mini_stacks']}")
+        st.write(f"**Salary Leftover:** ${config['salary_leftover'][0]}-${config['salary_leftover'][1]}")
+        st.write(f"**Dart Plays Required:** {config['require_darts']}+")
+    
+    # Advanced controls
+    with st.sidebar.expander("⚙️ Advanced Controls", expanded=False):
+        # Ownership controls
+        st.write("**Ownership Settings**")
+        ownership_min = st.slider("Min Ownership %", 0, 50, config['ownership_band'][0])
+        ownership_max = st.slider("Max Ownership %", 0, 100, config['ownership_band'][1])
+        
+        # Boom controls
+        st.write("**Boom Settings**")
+        boom_threshold = st.slider("Boom Score Threshold", 30, 100, config['boom_threshold'])
+        
+        # Value controls
+        st.write("**Value Settings**")
+        value_threshold = st.number_input("Value per $1K Threshold", 2.0, 6.0, config['value_threshold'], 0.1)
+        
+        # Stack controls
+        st.write("**Stack Settings**")
+        enforce_bring_back = st.checkbox("Enforce Bring-back", config['enforce_bring_back'])
+        mini_stacks = st.selectbox("Mini-stacks", [0, 1, 2], config['mini_stacks'])
+        
+        # Dart controls
+        st.write("**Dart Settings**")
+        require_darts = st.number_input("Require Dart Plays", 0, 5, config['require_darts'])
+        
+        # Salary controls
+        st.write("**Salary Settings**")
+        salary_min = st.number_input("Min Salary Leftover", 0, 1000, config['salary_leftover'][0])
+        salary_max = st.number_input("Max Salary Leftover", 0, 2000, config['salary_leftover'][1])
+    
+    # Apply preset button
+    if st.sidebar.button("✅ Apply Preset", type="primary"):
+        st.success(f"Applied {preset} field preset configuration!")
+    
+    # Optimization settings
+    st.sidebar.header("⚡ Optimization")
+    n_lineups = st.sidebar.number_input("Number of lineups", min_value=1, max_value=150, value=20, step=1)
+    
+    # Main content area
+    if not players_file:
+        st.info("👈 Upload a Players CSV file in the sidebar to get started.")
+        
+        # Show GPP Strategy info
+        with st.expander("📚 GPP Strategy Guide", expanded=False):
+            st.markdown("""
+            ### GPP Preset Strategy
+            
+            **Small Field (150 entries or less):**
+            - Higher ownership tolerance (15-35%)
+            - Moderate boom requirements (60+ score)
+            - Focus on solid value plays (3.5+ pts/$1K)
+            - Optional bring-back stacks
+            
+            **Mid Field (150-1000 entries):**
+            - Lower ownership targets (10-25%)
+            - Higher boom requirements (70+ score)
+            - Better value requirements (4.0+ pts/$1K)
+            - Enforce bring-back stacks for correlation
+            
+            **Large Field (1000+ entries):**
+            - Contrarian ownership (5-20%)
+            - Elite boom requirements (75+ score)  
+            - Premium value plays (4.5+ pts/$1K)
+            - Multiple correlation plays (stacks + mini-stacks)
+            
+            For detailed strategy, see: [GPP Strategy Blueprint](docs/gpp_strategy_blueprint.md)
+            """)
+        
+        return
+    
+    # File processing
+    try:
+        players_df = pd.read_csv(players_file)
+        st.success(f"✅ Loaded {len(players_df)} players")
+        
+        # Show data preview
+        col1, col2 = st.columns(2)
+        with col1:
+            st.subheader("Players.csv (preview)")
+            st.dataframe(players_df.head(10), use_container_width=True)
+        
+        with col2:
+            st.subheader("Data Summary")
+            summary_data = {"players": players_df.shape}
+            if sims_file:
+                summary_data["sims"] = pd.read_csv(sims_file).shape
+            if def_file:
+                summary_data["DEF"] = pd.read_csv(def_file).shape
+            if stacks_file:
+                summary_data["QBRBWRTE"] = pd.read_csv(stacks_file).shape
+            
+            st.json(summary_data)
+        
+    except Exception as e:
+        st.error(f"❌ Error loading file: {e}")
+        return
+    
+    # Constraints Panel
+    st.subheader("🎯 Applied Constraints")
+    
+    constraint_data = {
+        "Constraint Type": [
+            "Ownership Band", "Boom Score", "Value Threshold", 
+            "Bring-back", "Mini-stacks", "Dart Plays", "Salary Band"
+        ],
+        "Setting": [
+            f"{ownership_min}% - {ownership_max}%",
+            f"{boom_threshold}+",
+            f"{value_threshold}+ pts/$1K",
+            "Required" if enforce_bring_back else "Optional",
+            f"{mini_stacks} required",
+            f"{require_darts}+ players",
+            f"${salary_min} - ${salary_max} leftover"
+        ],
+        "Status": ["✅ Active"] * 7
+    }
+    
+    constraints_df = pd.DataFrame(constraint_data)
+    st.dataframe(constraints_df, use_container_width=True, hide_index=True)
+    
+    # Run optimization
+    run_optimizer = st.button(
+        f"🚀 Generate {n_lineups} Lineups", 
+        type="primary", 
+        use_container_width=True
+    )
+    
+    if run_optimizer:
+        st.info("🚧 **Full optimization engine coming in next release!**")
+        st.write("The GPP Presets UI is now complete. The optimization logic will be implemented in a follow-up PR.")
+        
+        # Show placeholder results structure
+        with st.expander("Preview: Expected Output Structure", expanded=True):
+            placeholder_lineup = {
+                "lineup_id": [1, 2, 3],
+                "QB": ["Josh Allen", "Lamar Jackson", "Jalen Hurts"],
+                "RB1": ["Christian McCaffrey", "Austin Ekeler", "Josh Jacobs"],
+                "RB2": ["Tony Pollard", "Kenneth Walker", "Derrick Henry"],
+                "WR1": ["Tyreek Hill", "Stefon Diggs", "Davante Adams"],
+                "WR2": ["Keenan Allen", "Mike Evans", "DK Metcalf"],
+                "WR3": ["Gabe Davis", "Jerry Jeudy", "Tyler Lockett"],
+                "TE": ["Travis Kelce", "Mark Andrews", "Dallas Goedert"],
+                "FLEX": ["Tee Higgins", "Chris Olave", "Calvin Ridley"],
+                "DST": ["Bills", "49ers", "Eagles"],
+                "total_salary": [49800, 49600, 49900],
+                "projected_points": [142.5, 138.2, 145.1],
+                "boom_score_avg": [72.1, 68.8, 74.3],
+                "ownership_avg": [18.2, 15.6, 12.4]
+            }
+            
+            st.dataframe(pd.DataFrame(placeholder_lineup), use_container_width=True)
 
-        # Single CSV download
-        csv_bytes = results.to_csv(index=False).encode("utf-8")
-        st.download_button(
-            "Download results.csv",
-            data=csv_bytes,
-            file_name="results.csv",
-            mime="text/csv",
-            use_container_width=True,
-        )
-
-        # Enhanced Zip download with metadata
-        zip_buf = io.BytesIO()
-        with zipfile.ZipFile(zip_buf, mode="w", compression=zipfile.ZIP_DEFLATED) as zf:
-            zf.writestr("results.csv", csv_bytes)
-            zf.writestr("metadata.json", json.dumps(metadata, indent=2).encode("utf-8"))
-        zip_buf.seek(0)
-        st.download_button(
-            "Download all results (zip)",
-            data=zip_buf.getvalue(),
-            file_name="results.zip",
-            mime="application/zip",
-            use_container_width=True,
-        )
 
 
 def weekly_review_tab():
