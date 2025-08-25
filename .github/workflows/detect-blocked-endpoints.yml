@@ -1,0 +1,156 @@
+name: Detect Blocked Egress Endpoints
+
+on:
+  workflow_dispatch:
+
+jobs:
+  detect-blocked-endpoints:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Test outbound connectivity to critical endpoints
+        shell: bash
+        run: |
+          set -euo pipefail
+          
+          # Define critical endpoints for CI, package management, and ML workflows
+          declare -a urls=(
+            # GitHub core services (CI)
+            "https://github.com"
+            "https://api.github.com"
+            "https://uploads.github.com"
+            "https://codeload.github.com"
+            "https://raw.githubusercontent.com"
+            "https://objects.githubusercontent.com"
+            "https://ghcr.io"
+            "https://githubassets.com"
+            "https://github.githubassets.com"
+            "https://collector.github.com"
+            
+            # Package management - Python
+            "https://pypi.org"
+            "https://files.pythonhosted.org"
+            "https://download.pytorch.org"
+            "https://conda.anaconda.org"
+            "https://repo.anaconda.com"
+            
+            # Package management - Node.js
+            "https://registry.npmjs.org"
+            "https://registry.yarnpkg.com"
+            
+            # CDN and artifact endpoints
+            "https://fastly.com"
+            "https://jsdelivr.net"
+            "https://unpkg.com"
+            "https://cdnjs.cloudflare.com"
+            "https://cdn.jsdelivr.net"
+            
+            # CI/CD and containerization
+            "https://download.docker.com"
+            "https://registry.hub.docker.com"
+            "https://registry-1.docker.io"
+            "https://quay.io"
+            "https://gcr.io"
+            
+            # ML/Data platforms and model repositories
+            "https://huggingface.co"
+            "https://datasets.huggingface.co"
+            "https://cdn-lfs.huggingface.co"
+            "https://kaggle.com"
+            "https://www.kaggle.com"
+            "https://storage.googleapis.com"
+            "https://download.tensorflow.org"
+            "https://files.pythonhosted.org"
+            
+            # Cloud providers (common for artifacts and ML resources)
+            "https://amazonaws.com"
+            "https://s3.amazonaws.com"
+            "https://azure.microsoft.com"
+            "https://login.microsoftonline.com"
+            "https://management.azure.com"
+            
+            # Additional CI dependencies
+            "https://download.opensuse.org"
+            "https://archive.ubuntu.com"
+            "https://security.ubuntu.com"
+            "https://apt.postgresql.org"
+            "https://dl.google.com"
+          )
+          
+          echo "🔍 Testing outbound connectivity to critical endpoints for CI, package management, and ML workflows..."
+          echo "This workflow identifies blocked endpoints that may need to be allowlisted."
+          echo ""
+          
+          blocked_urls=()
+          accessible_urls=()
+          total_tests=${#urls[@]}
+          
+          for url in "${urls[@]}"; do
+            echo -n "Testing ${url}... "
+            
+            if curl -s --head --connect-timeout 10 --max-time 15 "${url}" > /dev/null 2>&1; then
+              echo "✅ OK"
+              accessible_urls+=("${url}")
+            else
+              echo "❌ BLOCKED/FAILED"
+              blocked_urls+=("${url}")
+            fi
+          done
+          
+          echo ""
+          echo "📊 Summary: $((total_tests - ${#blocked_urls[@]}))/${total_tests} endpoints accessible"
+          echo ""
+          
+          # Create blocked-hosts.txt artifact content
+          mkdir -p artifacts
+          
+          if [ ${#blocked_urls[@]} -eq 0 ]; then
+            echo "🎉 All connectivity tests passed! No endpoints are blocked."
+            echo "# No blocked endpoints detected" > artifacts/blocked-hosts.txt
+            echo "# All tested endpoints are accessible" >> artifacts/blocked-hosts.txt
+            echo "# Test run: $(date -u)" >> artifacts/blocked-hosts.txt
+          else
+            echo "⚠️  ${#blocked_urls[@]} endpoint(s) are blocked or failed connectivity test:"
+            echo ""
+            
+            # Create blocked-hosts.txt with blocked domains
+            echo "# Blocked or inaccessible endpoints detected" > artifacts/blocked-hosts.txt
+            echo "# Test run: $(date -u)" >> artifacts/blocked-hosts.txt
+            echo "# Total endpoints tested: ${total_tests}" >> artifacts/blocked-hosts.txt
+            echo "# Blocked endpoints: ${#blocked_urls[@]}" >> artifacts/blocked-hosts.txt
+            echo "" >> artifacts/blocked-hosts.txt
+            
+            echo "Blocked URLs:" | tee -a artifacts/blocked-hosts.txt
+            for blocked_url in "${blocked_urls[@]}"; do
+              echo "  - ${blocked_url}" | tee -a artifacts/blocked-hosts.txt
+            done
+            
+            echo "" | tee -a artifacts/blocked-hosts.txt
+            echo "Hostnames to potentially allowlist:" | tee -a artifacts/blocked-hosts.txt
+            for blocked_url in "${blocked_urls[@]}"; do
+              # Extract hostname from URL
+              hostname=$(echo "${blocked_url}" | sed -E 's|https?://([^/]+).*|\1|')
+              echo "  - ${hostname}" | tee -a artifacts/blocked-hosts.txt
+            done
+            
+            echo "" | tee -a artifacts/blocked-hosts.txt
+            echo "Accessible endpoints (${#accessible_urls[@]}):" | tee -a artifacts/blocked-hosts.txt
+            for accessible_url in "${accessible_urls[@]}"; do
+              echo "  - ${accessible_url}" >> artifacts/blocked-hosts.txt
+            done
+          fi
+          
+          echo ""
+          echo "📄 Results saved to blocked-hosts.txt artifact for download and review."
+          
+          # Note: This workflow does not fail even if endpoints are blocked
+          # The goal is to report and collect information, not block CI
+          echo ""
+          echo "✅ Endpoint detection completed successfully."
+
+      - name: Upload blocked endpoints report
+        uses: actions/upload-artifact@v4
+        with:
+          name: blocked-hosts.txt
+          path: artifacts/blocked-hosts.txt
+          retention-days: 30
+        if: always()  # Upload artifact even if previous steps had issues
